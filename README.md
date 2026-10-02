@@ -8,7 +8,27 @@ Goal-based micro-gold vaults on **Whop money rails**. Deadly simple: pick a vaul
 - **Storage:** localStorage first, Netlify Blobs for referral ledger, Whop company metadata mirror (when live)
 - **Monetization:** 2% `crypto_withdrawal_markup` (LIVE on `biz_VHruXn7hDphfiz`) → 0.8% tier-1 + 0.2% tier-2 referrals (48h hold) via Transfers API
 
-## Quickstart
+## Live
+
+- **App:** https://goldberry-app.netlify.app
+- **API:** `/.netlify/functions/{token,gold-price,swaps-quote,webhooks-whop,scheduled-payouts}`
+- **Repo:** https://github.com/tacibey/goldberry-app (private)
+- **Whop:** 2% `crypto_withdrawal_markup` LIVE on `biz_VHruXn7hDphfiz`; real USDT→XAUT quotes on Plasma (~$4.1k/oz)
+
+## Remaining manual steps (dashboard OAuth required)
+
+1. **GitHub auto-deploy:** Netlify dashboard → goldberry-app → Site settings →
+   Build & deploy → Link repository → `tacibey/goldberry-app` (branch `main`).
+   (API linking needs a GitHub App install — 2 clicks in the UI.)
+2. **Webhook:** Whop Developer Dashboard → Webhooks → Add endpoint:
+   `https://goldberry-app.netlify.app/.netlify/functions/webhooks-whop`,
+   events: `payment.succeeded`. Copy the signing secret, then:
+   `netlify env:set WHOP_WEBHOOK_SECRET <secret>` + redeploy.
+   (API key currently lacks `developer:manage_webhook` — tick it on the key too.)
+3. **Referral cron:** cron-job.org → `POST https://goldberry-app.netlify.app/.netlify/functions/scheduled-payouts` every 24h.
+4. **Custom domain:** when ready — Netlify Domain settings → add `goldberry.finance`.
+
+## Quickstart (local)
 
 ```bash
 cd goldberry-app
