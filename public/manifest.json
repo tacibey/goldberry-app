@@ -1,0 +1,12 @@
+{
+  "name": "Goldberry — snack-size gold savings",
+  "short_name": "Goldberry",
+  "description": "Goal-based micro-gold vaults. Stack gold by the gram.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#0c0a09",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

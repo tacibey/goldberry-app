@@ -1,0 +1,32 @@
+{
+  "name": "goldberry-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Goldberry — snack-size gold savings vaults on Whop. Stack gold by the gram.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "netlify": "netlify dev",
+    "fees:setup": "tsx scripts/setup-fees.ts"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.0.0",
+    "@whop/elements": "^1.0.0",
+    "@whop/elements-react": "^1.0.0",
+    "@whop/sdk": "^1.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tsx": "^4.19.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.0.0"
+  }
+}
