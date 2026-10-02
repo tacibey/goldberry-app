@@ -38,30 +38,30 @@ export default async (req: Request) => {
   const apiKey = process.env.WHOP_API_KEY;
   if (apiKey) {
     try {
-      const { WhopClient } = await import('@whop/sdk');
-      const whop = new WhopClient({ token: apiKey } as never) as unknown as {
-        swaps: {
-          createQuote: (a: { from_token: string; to_token: string; amount: string }) => Promise<{
-            amount_out: string; rate: string; fee_bps: number; fee_amount: string; bridge_fee: number;
-          }>;
-        };
-      };
-      // 1 USD ≈ 1 USDT for preview; 6-decimal USDT.
-      const q = await whop.swaps.createQuote({ from_token: 'USDT', to_token: 'XAUT', amount: String(amountUSD) });
-      const xaut = parseFloat(q.amount_out); // XAUT ≈ 1 troy oz
-      const grams = xaut * GRAMS_PER_OZ;
-      const oz = xaut;
-      return json(200, {
-        mode: 'whop-quote',
-        grams, oz,
-        feeUSD: parseFloat(q.fee_amount) || 0,
-        feeBps: q.fee_bps,
-        bridgeFee: q.bridge_fee,
-        rate: q.rate,
-        source: 'xaut-live',
-        note: 'Real Whop quote: USDT→XAUT on Plasma. Deposit USD→USDT first via DepositElement.',
+      // Real Whop quote: USDT → XAUT on Plasma. 1 USD ≈ 1 USDT for preview.
+      const r = await fetch('https://api.whop.com/api/v1/swaps/quote', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ from_token: 'USDT', to_token: 'XAUT', amount: String(amountUSD) }),
       });
-    } catch (e) {
+      const q = await r.json().catch(() => null) as {
+        amount_out: string; rate: string; fee_bps: number; fee_amount: string; bridge_fee: number;
+      } | null;
+      if (r.ok && q && typeof q.amount_out === 'string') {
+        const xaut = parseFloat(q.amount_out); // XAUT ≈ 1 troy oz
+        const grams = xaut * GRAMS_PER_OZ;
+        return json(200, {
+          mode: 'whop-quote',
+          grams, oz: xaut,
+          feeUSD: parseFloat(q.fee_amount) || 0,
+          feeBps: q.fee_bps,
+          bridgeFee: q.bridge_fee,
+          rate: q.rate,
+          source: 'xaut-live',
+          note: 'Real Whop quote: USDT→XAUT on Plasma. Deposit USD→USDT first via DepositElement.',
+        });
+      }
+    } catch {
       // fall through to math fallback — UI keeps working
     }
   }

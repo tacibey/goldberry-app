@@ -41,10 +41,20 @@ export default async (req: Request) => {
   const list = (await store.list({ prefix: 'pending/' }).catch(() => ({ blobs: [] }))) as { blobs: Array<{ key: string }> };
   const now = Date.now();
   const released: Array<{ key: string; to: string; usd: number; transfer: string }> = [];
-  const { WhopClient } = await import('@whop/sdk');
-  const whop = new WhopClient({ token: apiKey } as never) as unknown as {
-    transfers: { create: (a: { amount: number; currency: string; origin_id: string; destination_id: string; metadata?: Record<string, unknown> }) => Promise<{ id: string }> };
-  };
+
+  async function createTransfer(to: string, usd: number, source: string): Promise<string> {
+    const r = await fetch('https://api.whop.com/api/v1/transfers', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        amount: usd, currency: 'usd', origin_id: originId,
+        destination_id: to, metadata: { reason: 'goldberry_referral', source },
+      }),
+    });
+    const j = await r.json().catch(() => null) as { id?: string; error?: unknown } | null;
+    if (!r.ok || !j?.id) throw new Error(`transfer failed: ${JSON.stringify(j).slice(0, 200)}`);
+    return j.id;
+  }
 
   let budget = 25;
   for (const b of list.blobs) {
@@ -61,12 +71,9 @@ export default async (req: Request) => {
     const ids: string[] = [];
     try {
       for (const leg of legs) {
-        const t = await whop.transfers.create({
-          amount: leg.usd, currency: 'usd', origin_id: originId,
-          destination_id: leg.to, metadata: { reason: 'goldberry_referral', source: b.key },
-        });
-        ids.push(t.id);
-        released.push({ key: b.key, to: leg.to, usd: leg.usd, transfer: t.id });
+        const id = await createTransfer(leg.to, leg.usd, b.key);
+        ids.push(id);
+        released.push({ key: b.key, to: leg.to, usd: leg.usd, transfer: id });
         budget--;
       }
       await store.setJSON(b.key, { ...p, status: 'PAID', paid_at: new Date().toISOString(), transferIds: ids }).catch(() => {});
