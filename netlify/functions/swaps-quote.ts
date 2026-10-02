@@ -1,17 +1,15 @@
 // POST /.netlify/functions/swaps-quote { amountUSD, accountId?, ref? }
-// Tries a REAL Whop swap when configured; otherwise returns a transparent
-// gold-price quote so the UI keeps working in mock mode.
+//
+// Honest quoting engine:
+//  - When WHOP_API_KEY is set: real Whop swap quote USDT → XAUT (Plasma).
+//    We treat 1 USD ≈ 1 USDT for preview (deposit converts 1:1 minus rails).
+//    Whop's own fee (~1%, fee_bps=100) + bridge fee come straight from the quote.
+//  - Otherwise: CoinGecko XAUT math fallback (mock mode for local dev).
+// Goldberry's 2% monetization lives on WITHDRAWAL (fee markup, already live),
+// not on the swap — so we do NOT deduct it here. Referral PENDING intent is
+// still recorded on volume (paid later from platform balance via Transfers).
 import { getStore } from '@netlify/blobs';
 import { GRAMS_PER_OZ, json } from './_shared.ts';
-
-async function livePrice(): Promise<{ pricePerOzUSD: number; source: string }> {
-  try {
-    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether-gold&vs_currencies=usd');
-    const j = await r.json();
-    if (typeof j?.['tether-gold']?.usd === 'number') return { pricePerOzUSD: j['tether-gold'].usd, source: 'xaut-live' };
-  } catch { /* ignore */ }
-  return { pricePerOzUSD: parseFloat(process.env.GOLD_FALLBACK_OZ_USD || '2650') || 2650, source: 'static' };
-}
 
 export default async (req: Request) => {
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
@@ -19,22 +17,12 @@ export default async (req: Request) => {
   const amountUSD = Number(body.amountUSD);
   if (!(amountUSD > 0)) return json(400, { error: 'amountUSD > 0 required' });
 
-  const feeUSD = amountUSD * 0.02;
-  const netUSD = amountUSD - feeUSD;
-  const { pricePerOzUSD, source } = await livePrice();
-  const oz = netUSD / pricePerOzUSD;
-  const grams = oz * GRAMS_PER_OZ;
-
-  const apiKey = process.env.WHOP_API_KEY;
-  const accountId: string | undefined = body.accountId && body.accountId !== 'me' ? body.accountId : process.env.BIZ_ID;
-
-  // Record referral intent (PENDING, 48h hold) even in mock mode.
+  // Record referral intent (PENDING, 48h hold) regardless of mode.
   try {
     const ref = body.ref as { tier1?: string | null; tier2?: string | null } | undefined;
-    if ((ref?.tier1 || ref?.tier2) && amountUSD > 0) {
+    if (ref?.tier1 || ref?.tier2) {
       const store = getStore('goldberry');
-      const key = `pending/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`;
-      await store.setJSON(key, {
+      await store.setJSON(`pending/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`, {
         amountUSD,
         tier1: ref?.tier1 ?? null,
         tier2: ref?.tier2 ?? null,
@@ -47,31 +35,49 @@ export default async (req: Request) => {
     }
   } catch { /* blobs unavailable locally — non-fatal */ }
 
-  // Real swap attempt (only when Whop is configured).
-  if (apiKey && accountId) {
+  const apiKey = process.env.WHOP_API_KEY;
+  if (apiKey) {
     try {
       const { WhopClient } = await import('@whop/sdk');
-      const whop = new WhopClient({ token: apiKey } as never);
-      const client = whop as unknown as {
+      const whop = new WhopClient({ token: apiKey } as never) as unknown as {
         swaps: {
-          createQuote?: (a: unknown) => Promise<unknown>;
-          create?: (a: unknown) => Promise<{ id?: string }>;
+          createQuote: (a: { from_token: string; to_token: string; amount: string }) => Promise<{
+            amount_out: string; rate: string; fee_bps: number; fee_amount: string; bridge_fee: number;
+          }>;
         };
       };
-      // Quote-first if the SDK supports it; never throws the request on failure.
-      if (client.swaps?.createQuote) {
-        await client.swaps.createQuote({ account_id: accountId, from_token: 'USD', to_token: 'XAUT', amount: netUSD }).catch(() => null);
-      }
-      if (client.swaps?.create) {
-        const swap = await client.swaps.create({ account_id: accountId, from_token: 'USD', to_token: 'XAUT', amount: netUSD }).catch(() => null) as { id?: string } | null;
-        if (swap?.id) {
-          return json(200, { mode: 'whop-swap', swapId: swap.id, grams, oz, feeUSD, netUSD, pricePerOzUSD, source });
-        }
-      }
+      // 1 USD ≈ 1 USDT for preview; 6-decimal USDT.
+      const q = await whop.swaps.createQuote({ from_token: 'USDT', to_token: 'XAUT', amount: String(amountUSD) });
+      const xaut = parseFloat(q.amount_out); // XAUT ≈ 1 troy oz
+      const grams = xaut * GRAMS_PER_OZ;
+      const oz = xaut;
+      return json(200, {
+        mode: 'whop-quote',
+        grams, oz,
+        feeUSD: parseFloat(q.fee_amount) || 0,
+        feeBps: q.fee_bps,
+        bridgeFee: q.bridge_fee,
+        rate: q.rate,
+        source: 'xaut-live',
+        note: 'Real Whop quote: USDT→XAUT on Plasma. Deposit USD→USDT first via DepositElement.',
+      });
     } catch (e) {
-      // fall through to quote mode — UI still credits grams, backend logs intent
+      // fall through to math fallback — UI keeps working
     }
   }
 
-  return json(200, { mode: apiKey ? 'quote' : 'mock', grams, oz, feeUSD, netUSD, pricePerOzUSD, source });
+  // Fallback math (no key / quote failed): CoinGecko → static.
+  let pricePerOzUSD = parseFloat(process.env.GOLD_FALLBACK_OZ_USD || '2650') || 2650;
+  let source = 'static';
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether-gold&vs_currencies=usd');
+    const j = await r.json();
+    if (typeof j?.['tether-gold']?.usd === 'number') {
+      pricePerOzUSD = j['tether-gold'].usd;
+      source = 'xaut-live';
+    }
+  } catch { /* keep fallback */ }
+  const oz = amountUSD / pricePerOzUSD;
+  const grams = oz * GRAMS_PER_OZ;
+  return json(200, { mode: apiKey ? 'quote' : 'mock', grams, oz, feeUSD: 0, pricePerOzUSD, source });
 };

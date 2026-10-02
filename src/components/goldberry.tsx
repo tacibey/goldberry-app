@@ -32,9 +32,9 @@ export function PortfolioHero({ totalGrams, quote, onStack, onAddFunds }: { tota
           {quote ? <>${quote.pricePerOzUSD.toLocaleString()} / oz via {quote.source}</> : 'fetching live price…'}
         </div>
         <div className="ticker">
-          <span className="tick">XAUT <b>≈ 1 oz gold</b></span>
-          <span className="tick">fee <b>2.0%</b> flat, shown upfront</span>
-          <span className="tick">non-custodial <b>Whop rails</b></span>
+          <span className="tick">USDT → XAUT <b>real Whop rail</b></span>
+          <span className="tick">2% once, <b>on cash-out</b></span>
+          <span className="tick">non-custodial <b>Whop ledger</b></span>
         </div>
         <div className="cta-row">
           <button className="btn gold" onClick={onStack}>⚡ Stack gold</button>
@@ -87,7 +87,7 @@ export function SwapBox({ quote, usd, setUsd, onConfirm, busy }: { quote: GoldQu
       {quote && n > 0 ? (
         <div className="quote">
           ≈ <b>{quote.grams.toFixed(4)} g</b> ({quote.oz.toFixed(6)} oz) XAUT<br />
-          price <b>${quote.pricePerOzUSD.toLocaleString()}</b>/oz · fee <b>${quote.feeUSD.toFixed(2)}</b> (2%) · net <b>${quote.netUSD.toFixed(2)}</b><br />
+          price <b>${quote.pricePerOzUSD.toLocaleString()}</b>/oz · est. fee <b>${quote.feeUSD.toFixed(2)}</b> · net <b>${quote.netUSD.toFixed(2)}</b><br />
           <span style={{ color: '#a8a29e' }}>source: {quote.source} · real swap via Whop when connected</span>
         </div>
       ) : (
@@ -96,7 +96,7 @@ export function SwapBox({ quote, usd, setUsd, onConfirm, busy }: { quote: GoldQu
       <div className="cta-row">
         <button className="btn gold" disabled={!(n > 0) || busy} onClick={onConfirm}>{busy ? 'Stacking…' : '🫐 Stack into vault'}</button>
       </div>
-      <div className="fine">MVP: grams land in your active vault instantly (local). When Whop swaps are live for your account, the same button fires a real USD→XAUT swap first.</div>
+      <div className="fine">Live rail: deposit USD → USDT, swap USDT→XAUT on Plasma via Whop (~1% swap fee). Goldberry's 2% applies once, on cash-out — referrals 0.8%/0.2% paid after a 48h hold.</div>
     </div>
   );
 }

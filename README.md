@@ -3,10 +3,10 @@
 Goal-based micro-gold vaults on **Whop money rails**. Deadly simple: pick a vault, type $10, watch grams stack.
 
 - **Frontend:** Vite React + TS PWA (`src/`), EN only, GenZ tone
-- **Money:** Whop Elements (Balance / Deposit / Withdraw) + Swaps API (USD→XAUT)
+- **Money:** Whop Elements (Balance / Deposit / Withdraw) + real Swaps quotes (USDT→XAUT on Plasma, ~1% Whop fee)
 - **Backend:** Netlify Functions (`netlify/functions/`)
 - **Storage:** localStorage first, Netlify Blobs for referral ledger, Whop company metadata mirror (when live)
-- **Monetization:** 2.0% disclosed fee → 0.8% tier-1 + 0.2% tier-2 referrals (48h hold) via Transfers API
+- **Monetization:** 2% `crypto_withdrawal_markup` (LIVE on `biz_VHruXn7hDphfiz`) → 0.8% tier-1 + 0.2% tier-2 referrals (48h hold) via Transfers API
 
 ## Quickstart
 
