@@ -17,3 +17,9 @@
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
+
+# SPA fallback for /oauth/callback (Netlify serves /.netlify/functions/* first, so API is unaffected)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

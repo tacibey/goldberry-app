@@ -77,7 +77,7 @@ export function VaultList({ vaults, activeId, onSelect }: { vaults: Vault[]; act
 }
 
 // ---------- Swap box ----------
-export function SwapBox({ quote, usd, setUsd, onConfirm, busy }: { quote: GoldQuote | null; usd: string; setUsd: (s: string) => void; onConfirm: () => void; busy: boolean }) {
+export function SwapBox({ quote, usd, setUsd, onConfirm, busy, live }: { quote: GoldQuote | null; usd: string; setUsd: (s: string) => void; onConfirm: () => void; busy: boolean; live?: boolean }) {
   const n = parseFloat(usd) || 0;
   return (
     <div className="card swap">
@@ -94,31 +94,49 @@ export function SwapBox({ quote, usd, setUsd, onConfirm, busy }: { quote: GoldQu
         <div className="quote">Type an amount — e.g. <b>$10</b> ≈ a berry of gold. Minimum vibes, maximum compounding.</div>
       )}
       <div className="cta-row">
-        <button className="btn gold" disabled={!(n > 0) || busy} onClick={onConfirm}>{busy ? 'Stacking…' : '🫐 Stack into vault'}</button>
+        <button className="btn gold" disabled={!(n > 0) || busy} onClick={onConfirm}>{busy ? 'Stacking…' : live ? '⚡ Stack real gold' : '🫐 Stack into vault'}</button>
       </div>
-      <div className="fine">Live rail: deposit USD → USDT, swap USDT→XAUT on Plasma via Whop (~1% swap fee). Goldberry's 2% applies once, on cash-out — referrals 0.8%/0.2% paid after a 48h hold.</div>
+      {live ? (
+        <div className="fine">LIVE MODE — real USDT → real XAUT on your Whop account (min $5). Settles in seconds; grams credit when the swap completes.</div>
+      ) : (
+        <div className="fine">DEMO MODE — no login, no money moves. Sign in to stack real gold. Live rail: deposit USD → USDT, swap USDT→XAUT on Plasma via Whop (~1% swap fee). Goldberry's 2% applies once, on cash-out — referrals 0.8%/0.2% paid after a 48h hold.</div>
+      )}
     </div>
   );
 }
 
-// ---------- Wallet (Whop Elements slots) ----------
-export function WalletPanel({ accountReady }: { accountReady: boolean }) {
+// ---------- Wallet (Whop Elements: real mounts when live, placeholders in demo) ----------
+export function WalletPanel({ accountReady, accountId }: { accountReady: boolean; accountId?: string | null }) {
   useEffect(() => {
-    // Elements mount lazily when backend is live; slots degrade gracefully.
+    if (!accountReady || !accountId) return;
+    let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/.netlify/functions/token?accountId=me');
+        const res = await fetch(`/.netlify/functions/token?accountId=${encodeURIComponent(accountId)}`);
         if (!res.ok) return;
-        await res.json();
-      } catch { /* backend not configured yet — show placeholders */ }
+        const { token } = (await res.json()) as { token?: string };
+        if (!token || cancelled) return;
+        const { loadWhop } = await import('@whop/elements');
+        const whop = loadWhop() as unknown as {
+          wallet: { create: (opts: { accountId: string; accessToken: string }) => unknown };
+        };
+        const wallet = whop.wallet.create({ accountId, accessToken: token }) as {
+          create: (kind: string, opts?: unknown) => { mount: (sel: string) => void; create: (kind: string, opts?: unknown) => { mount: (sel: string) => void } };
+        };
+        const balances = wallet.create('balances');
+        balances.create('balance').mount('#gb-balance');
+        wallet.create('deposit').mount('#gb-deposit');
+        wallet.create('withdraw').mount('#gb-withdraw');
+      } catch { /* stays in placeholder mode */ }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [accountReady, accountId]);
   return (
     <div>
       <div className="wallet-grid">
-        <div className="slot" id="gb-balance"><h4>Balance — Whop</h4><div className="mock-note">{accountReady ? 'Mounting BalanceElement…' : <>Connect Whop to see live ledger. Set <code>WHOP_API_KEY</code> in Netlify env, then this slot mounts <code>BalanceElement</code>.</>}</div></div>
-        <div className="slot" id="gb-deposit"><h4>Deposit — Whop</h4><div className="mock-note">DepositElement lives here (cards, bank, crypto rails). Until then, use Stack box above to simulate.</div></div>
-        <div className="slot" id="gb-withdraw"><h4>Withdraw — Whop</h4><div className="mock-note">WithdrawElement with live fees + arrival estimates. Non-custodial: money never touches Goldberry.</div></div>
+        <div className="slot" id="gb-balance"><h4>Balance — Whop</h4>{!accountReady && <div className="mock-note">Sign in + open your gold account to see your live ledger here.</div>}</div>
+        <div className="slot" id="gb-deposit"><h4>Deposit — Whop</h4>{!accountReady && <div className="mock-note">Your deposit rails (card, bank, crypto) mount here once your account is active.</div>}</div>
+        <div className="slot" id="gb-withdraw"><h4>Withdraw — Whop</h4>{!accountReady && <div className="mock-note">Withdraw with live fees + arrival estimates. Non-custodial: money never touches Goldberry.</div>}</div>
       </div>
     </div>
   );
@@ -248,6 +266,14 @@ export function useGoldberry() {
     setVaults(next);
     select(v.vault_id);
   };
+  const notify = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+  const creditGrams = (grams: number) => {
+    if (!activeId || !(grams > 0)) return;
+    setVaults(addGrams(activeId, grams));
+  };
 
-  return { vaults, activeId, totalGrams, quote, usd, setUsd, busy, toast, stack, select, create };
+  return { vaults, activeId, totalGrams, quote, usd, setUsd, busy, toast, stack, select, create, creditGrams, notify, setBusy };
 }

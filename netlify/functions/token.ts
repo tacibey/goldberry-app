@@ -1,26 +1,47 @@
 // GET /.netlify/functions/token?accountId=biz_xxx
-// Mints a short-lived Elements access token for a connected account.
+// Mints a short-lived Elements access token.
+// - Logged-in users (session cookie): mints for THEIR OWN connected account.
+//   Never mints for an account that isn't theirs (ownership guard).
+// - Logged-out / demo: falls back to the platform business (read-only showcase).
 // Zero-dependency: plain fetch to the Whop REST API (keeps bundles instant).
-import { json } from './_shared.ts';
+import { json, WHOP_API } from './_shared.ts';
+import { loadSession } from './oauth-session.ts';
 
 export default async (req: Request) => {
-  const url = new URL(req.url);
-  let accountId = url.searchParams.get('accountId');
   const apiKey = process.env.WHOP_API_KEY;
   if (!apiKey) return json(503, { error: 'WHOP_API_KEY not configured yet' });
-  if (!accountId || accountId === 'me') {
-    accountId = process.env.BIZ_ID || null;
-    if (!accountId) return json(400, { error: 'accountId required' });
+
+  const url = new URL(req.url);
+  const requested = url.searchParams.get('accountId');
+  const found = await loadSession(req).catch(() => null);
+
+  let accountId: string | null = null;
+  if (found?.session.account_id) {
+    // Logged in: only their own account. Anything else requested is rejected.
+    if (requested && requested !== 'me' && requested !== found.session.account_id) {
+      return json(403, { error: 'not your account' });
+    }
+    accountId = found.session.account_id;
+  } else {
+    if (!requested || requested === 'me') {
+      accountId = process.env.BIZ_ID || null;
+      if (!accountId) return json(400, { error: 'accountId required' });
+    } else {
+      accountId = requested;
+    }
   }
+
   try {
-    const r = await fetch('https://api.whop.com/api/v1/access_tokens', {
+    const r = await fetch(`${WHOP_API}/access_tokens`, {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({ company_id: accountId }),
     });
     const j = await r.json().catch(() => null);
-    if (!r.ok || !j?.token) return json(502, { error: 'mint failed', detail: JSON.stringify(j).slice(0, 200) });
-    return json(200, { token: j.token });
+    if (!r.ok || !(j as { token?: string })?.token) {
+      return json(502, { error: 'mint failed', detail: JSON.stringify(j).slice(0, 200) });
+    }
+    return json(200, { token: (j as { token: string }).token, accountId, mine: Boolean(found?.session.account_id) });
   } catch (e) {
     return json(502, { error: 'mint failed', detail: String(e).slice(0, 200) });
   }

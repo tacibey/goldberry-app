@@ -8,8 +8,7 @@
 // Goldberry's 2% monetization lives on WITHDRAWAL (fee markup, already live),
 // not on the swap — so we do NOT deduct it here. Referral PENDING intent is
 // still recorded on volume (paid later from platform balance via Transfers).
-import { getStore } from '@netlify/blobs';
-import { GRAMS_PER_OZ, json } from './_shared.ts';
+import { GRAMS_PER_OZ, blobSet, json, WHOP_API } from './_shared.ts';
 
 export default async (req: Request) => {
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
@@ -18,28 +17,25 @@ export default async (req: Request) => {
   if (!(amountUSD > 0)) return json(400, { error: 'amountUSD > 0 required' });
 
   // Record referral intent (PENDING, 48h hold) regardless of mode.
-  try {
-    const ref = body.ref as { tier1?: string | null; tier2?: string | null } | undefined;
-    if (ref?.tier1 || ref?.tier2) {
-      const store = getStore('goldberry');
-      await store.setJSON(`pending/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`, {
-        amountUSD,
-        tier1: ref?.tier1 ?? null,
-        tier2: ref?.tier2 ?? null,
-        tier1USD: amountUSD * 0.008,
-        tier2USD: amountUSD * 0.002,
-        status: 'PENDING',
-        release_at: Date.now() + 48 * 3600 * 1000,
-        created_at: new Date().toISOString(),
-      });
-    }
-  } catch { /* blobs unavailable locally — non-fatal */ }
+  const ref = body.ref as { tier1?: string | null; tier2?: string | null } | undefined;
+  if ((ref?.tier1 || ref?.tier2) && amountUSD > 0) {
+    await blobSet(`pending/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.json`, {
+      amountUSD,
+      tier1: ref?.tier1 ?? null,
+      tier2: ref?.tier2 ?? null,
+      tier1USD: amountUSD * 0.008,
+      tier2USD: amountUSD * 0.002,
+      status: 'PENDING',
+      release_at: Date.now() + 48 * 3600 * 1000,
+      created_at: new Date().toISOString(),
+    });
+  }
 
   const apiKey = process.env.WHOP_API_KEY;
   if (apiKey) {
     try {
       // Real Whop quote: USDT → XAUT on Plasma. 1 USD ≈ 1 USDT for preview.
-      const r = await fetch('https://api.whop.com/api/v1/swaps/quote', {
+      const r = await fetch(`${WHOP_API}/swaps/quote`, {
         method: 'POST',
         headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
         body: JSON.stringify({ from_token: 'USDT', to_token: 'XAUT', amount: String(amountUSD) }),
