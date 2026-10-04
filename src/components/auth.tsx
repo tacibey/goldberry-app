@@ -43,7 +43,7 @@ export function AuthButton({ session, onLogin, onLogout }: { session: SessionSta
 
 export function OnboardingGate({ accountId, onDone }: { accountId: string | null; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
-  const [kyc, setKyc] = useState<{ needed: boolean; url: string | null }>({ needed: false, url: null });
+  const [kyc, setKyc] = useState<{ needed: boolean; url: string | null; status: string | null; linkError: string | null }>({ needed: false, url: null, status: null, linkError: null });
   const [error, setError] = useState<string | null>(null);
 
   const ensure = async () => {
@@ -51,13 +51,13 @@ export function OnboardingGate({ accountId, onDone }: { accountId: string | null
     setError(null);
     try {
       const r = await fetch('/.netlify/functions/ensure-account', { method: 'POST' });
-      const j = await r.json();
+      const j = (await r.json()) as { needsKyc?: boolean; onboardingUrl?: string; verification?: string; linkError?: string; error?: string };
       if (!r.ok) {
-        setError((j as { error?: string }).error || 'Account setup failed.');
+        setError(j.error || 'Account setup failed.');
         return;
       }
-      if ((j as { needsKyc?: boolean }).needsKyc) {
-        setKyc({ needed: true, url: (j as { onboardingUrl?: string }).onboardingUrl ?? null });
+      if (j.needsKyc) {
+        setKyc({ needed: true, url: j.onboardingUrl ?? null, status: j.verification ?? null, linkError: j.linkError ?? null });
       } else {
         onDone();
       }
@@ -86,12 +86,16 @@ export function OnboardingGate({ accountId, onDone }: { accountId: string | null
       ) : (
         <>
           <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-            Account opened. Whop needs a quick identity check before money moves — takes ~5 minutes, one time.
+            Account opened. Whop needs a quick identity check <b>for this gold account</b> before money moves
+            (separate from your personal Whop verification) — takes ~5 minutes, one time.
+            {kyc.status && <><br /><span style={{ color: '#a8a29e' }}>Status: {kyc.status}</span></>}
           </div>
           <div className="cta-row">
             {kyc.url ? (
               <a className="btn gold" style={{ textDecoration: 'none' }} href={kyc.url} target="_blank" rel="noreferrer">Verify identity</a>
-            ) : null}
+            ) : (
+              <div className="fine" style={{ color: '#f87171' }}>Verification link failed to load{kyc.linkError ? `: ${kyc.linkError}` : '. Try again.'}</div>
+            )}
             <button className="btn ghost" onClick={ensure}>I've verified — check again</button>
           </div>
         </>

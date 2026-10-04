@@ -65,6 +65,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
   if (p === '/api/v1/account_links' && req.method === 'POST') {
+    if (!body.account_id) return send(res, 422, { error: 'account_id is required' });
     return send(res, 200, { url: 'https://mock.kyc/verify/test' });
   }
   if (p === '/api/v1/swaps/quote' && req.method === 'POST') {

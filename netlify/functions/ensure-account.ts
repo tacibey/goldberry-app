@@ -44,19 +44,21 @@ export default async (req: Request) => {
 
 async function statusFor(accountId: string, apiKey: string) {
   // Read account; verification state decides whether onboarding is needed.
+  // Field names vary across API versions — accept every known "verified" shape.
   const res = await whopFetch(`/accounts/${accountId}`, apiKey);
-  const acc = (res.data || {}) as {
-    verification_status?: string; verified?: boolean; requirements?: unknown;
-  };
-  const verified = acc.verified === true || acc.verification_status === 'verified';
-  if (verified) return { accountId, needsKyc: false as const };
+  const acc = ((res.data || {}) as Record<string, unknown>) || {};
+  const verified =
+    acc.verified === true ||
+    ['verified', 'complete', 'approved', 'active'].includes(String(acc.verification_status || acc.kyc_status || acc.status || '').toLowerCase());
+  const verification = String(acc.verification_status || acc.kyc_status || acc.status || (res.ok ? 'unknown' : 'unreadable'));
 
-  // Not verified → mint a hosted onboarding link.
+  // Mint (or re-mint) a hosted onboarding link regardless — it doubles as the
+  // "finish verification" entry point when status is anything but verified.
   const origin = process.env.URL || 'https://goldberry-app.netlify.app';
   const link = await whopFetch('/account_links', apiKey, {
     method: 'POST',
     body: JSON.stringify({
-      company_id: accountId,
+      account_id: accountId,
       refresh_url: `${origin}/onboarding`,
       return_url: `${origin}/?onboarded=1`,
       use_case: 'account_onboarding',
@@ -65,8 +67,9 @@ async function statusFor(accountId: string, apiKey: string) {
   const linkData = (link.data || {}) as { url?: string };
   return {
     accountId,
-    needsKyc: true as const,
+    needsKyc: !verified,
     onboardingUrl: linkData.url || null,
-    verification: acc.verification_status || 'unknown',
+    linkError: linkData.url ? null : JSON.stringify(link.data).slice(0, 200),
+    verification,
   };
 }
