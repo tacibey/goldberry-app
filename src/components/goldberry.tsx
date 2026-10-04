@@ -126,8 +126,8 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
         const Whop = await loadWhop();
         const whop = (Whop as unknown as (opts: { locale: string }) => {
           wallet: {
-            create: (opts: { accountId: string; accessToken: string; appearance?: unknown; onIdentityVerificationRequested?: () => void }) => {
-              create: (kind: string) => { mount: (sel: string) => void; create: (kind: string) => { mount: (sel: string) => void } };
+            create: (opts: { accountId: string; accessToken: string; appearance?: unknown }) => {
+              create: (kind: string, elementOpts?: unknown) => { mount: (sel: string) => void; create: (kind: string) => { mount: (sel: string) => void } };
             };
           };
         })({ locale: 'en' });
@@ -137,21 +137,24 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
           accessToken: token,
           // Goldberry is dark — without this, element text renders black-on-dark.
           appearance: { theme: { appearance: 'dark' } },
+        });
+
+        const openKyc = () => {
           // The deposit element's "Verify identity" button has no default action
           // on an external site — route it to our hosted KYC onboarding link.
-          onIdentityVerificationRequested: () => {
-            void fetch('/.netlify/functions/ensure-account', { method: 'POST' })
-              .then((r) => r.json())
-              .then((j: { onboardingUrl?: string }) => {
-                if (j.onboardingUrl) window.open(j.onboardingUrl, '_blank', 'noopener');
-              })
-              .catch(() => {});
-          },
-        });
+          void fetch('/.netlify/functions/ensure-account', { method: 'POST' })
+            .then((r) => r.json())
+            .then((j: { onboardingUrl?: string }) => {
+              if (j.onboardingUrl) window.open(j.onboardingUrl, '_blank', 'noopener');
+            })
+            .catch(() => {});
+        };
 
         const balances = wallet.create('balances');
         balances.create('balance').mount('#gb-balance');
-        wallet.create('deposit').mount('#gb-deposit');
+        // NOTE: identity callback lives on the ELEMENT (wallet-level one does
+        // not fire for the deposit button).
+        wallet.create('deposit', { onIdentityVerificationRequested: openKyc }).mount('#gb-deposit');
         wallet.create('withdraw').mount('#gb-withdraw');
         if (!cancelled) setStatus(null);
       } catch (e) {
