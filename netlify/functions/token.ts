@@ -31,18 +31,32 @@ export default async (req: Request) => {
     }
   }
 
-  try {
-    const r = await fetch(`${WHOP_API}/access_tokens`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ company_id: accountId }),
-    });
-    const j = await r.json().catch(() => null);
-    if (!r.ok || !(j as { token?: string })?.token) {
-      return json(502, { error: 'mint failed', detail: JSON.stringify(j).slice(0, 200) });
+  // Elements need scoped reads (balance chart, holdings, payout + identity
+  // surfaces). Degrade gracefully: full set → balance-only → legacy unscoped.
+  const scopeTiers: string[][] = [
+    ['company:balance:read', 'stats:read', 'payout:account:read', 'identity:write'],
+    ['company:balance:read', 'stats:read'],
+    [],
+  ];
+  let lastDetail = '';
+  for (const scoped_actions of scopeTiers) {
+    try {
+      const r = await fetch(`${WHOP_API}/access_tokens`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ company_id: accountId, ...(scoped_actions.length ? { scoped_actions } : {}) }),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && (j as { token?: string })?.token) {
+        return json(200, { token: (j as { token: string }).token, accountId, mine: Boolean(found?.session.account_id) });
+      }
+      lastDetail = JSON.stringify(j).slice(0, 200);
+      // Only retry on scope errors; other failures are final.
+      if (!/scoped|authorized.*action/i.test(lastDetail)) break;
+    } catch (e) {
+      lastDetail = String(e).slice(0, 200);
+      break;
     }
-    return json(200, { token: (j as { token: string }).token, accountId, mine: Boolean(found?.session.account_id) });
-  } catch (e) {
-    return json(502, { error: 'mint failed', detail: String(e).slice(0, 200) });
   }
+  return json(502, { error: 'mint failed', detail: lastDetail });
 };
