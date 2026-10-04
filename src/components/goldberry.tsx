@@ -126,7 +126,7 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
         const Whop = await loadWhop();
         const whop = (Whop as unknown as (opts: { locale: string }) => {
           wallet: {
-            create: (opts: { accountId: string; accessToken: string; appearance?: unknown }) => {
+            create: (opts: { accountId: string; accessToken: string; appearance?: unknown; onIdentityVerificationRequested?: () => void }) => {
               create: (kind: string) => { mount: (sel: string) => void; create: (kind: string) => { mount: (sel: string) => void } };
             };
           };
@@ -137,6 +137,16 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
           accessToken: token,
           // Goldberry is dark — without this, element text renders black-on-dark.
           appearance: { theme: { appearance: 'dark' } },
+          // The deposit element's "Verify identity" button has no default action
+          // on an external site — route it to our hosted KYC onboarding link.
+          onIdentityVerificationRequested: () => {
+            void fetch('/.netlify/functions/ensure-account', { method: 'POST' })
+              .then((r) => r.json())
+              .then((j: { onboardingUrl?: string }) => {
+                if (j.onboardingUrl) window.open(j.onboardingUrl, '_blank', 'noopener');
+              })
+              .catch(() => {});
+          },
         });
 
         const balances = wallet.create('balances');
