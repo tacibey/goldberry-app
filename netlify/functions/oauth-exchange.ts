@@ -22,19 +22,17 @@ export default async (req: Request) => {
   const { code, code_verifier, redirect_uri } = body as Record<string, string>;
   if (!code || !code_verifier || !redirect_uri) return json(400, { error: 'code, code_verifier, redirect_uri required' });
 
-  // 1) code → tokens. Confidential clients authenticate with HTTP Basic
-  // (client_id:client_secret); secret is also sent in the body for providers
-  // that expect it there. Belt and suspenders — servers ignore the extra.
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  // 1) code → tokens. Sent EXACTLY as the Whop docs example: no secret, no
+  // Basic header. (A wrong secret fails harder than no secret — the dashboard
+  // "client secret" is only wired in if the no-secret exchange demands it.)
   const tokenRes = await fetch(`${WHOP_OAUTH}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Basic ${basic}` },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       grant_type: 'authorization_code',
       code,
       redirect_uri,
       client_id: clientId,
-      ...(clientSecret ? { client_secret: clientSecret } : {}),
       code_verifier,
     }),
   });
@@ -57,7 +55,7 @@ export default async (req: Request) => {
     headers: { authorization: `Bearer ${tokens.access_token}` },
   });
   const me = (await meRes.json().catch(() => null)) as {
-    sub?: string; id?: string; email?: string; username?: string; name?: string;
+    sub?: string; id?: string; email?: string; username?: string; preferred_username?: string; name?: string;
   } | null;
   const userId: string = me?.sub || me?.id || '';
   if (!meRes.ok || !userId) return json(502, { error: 'userinfo failed' });
@@ -67,7 +65,7 @@ export default async (req: Request) => {
   const session: Session = {
     user_id: userId,
     email: me?.email ?? null,
-    username: me?.username ?? me?.name ?? null,
+    username: me?.preferred_username ?? me?.username ?? me?.name ?? null,
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token || '',
     obtained_at: Date.now(),
