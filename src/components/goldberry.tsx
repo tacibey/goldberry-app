@@ -126,13 +126,18 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
         const Whop = await loadWhop();
         const whop = (Whop as unknown as (opts: { locale: string }) => {
           wallet: {
-            create: (opts: { accountId: string; accessToken: string }) => {
+            create: (opts: { accountId: string; accessToken: string; appearance?: unknown }) => {
               create: (kind: string) => { mount: (sel: string) => void; create: (kind: string) => { mount: (sel: string) => void } };
             };
           };
         })({ locale: 'en' });
         if (cancelled) return;
-        const wallet = whop.wallet.create({ accountId, accessToken: token });
+        const wallet = whop.wallet.create({
+          accountId,
+          accessToken: token,
+          // Goldberry is dark — without this, element text renders black-on-dark.
+          appearance: { theme: { appearance: 'dark' } },
+        });
 
         const balances = wallet.create('balances');
         balances.create('balance').mount('#gb-balance');
