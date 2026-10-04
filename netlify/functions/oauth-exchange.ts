@@ -22,17 +22,18 @@ export default async (req: Request) => {
   const { code, code_verifier, redirect_uri } = body as Record<string, string>;
   if (!code || !code_verifier || !redirect_uri) return json(400, { error: 'code, code_verifier, redirect_uri required' });
 
-  // 1) code → tokens. Sent EXACTLY as the Whop docs example: no secret, no
-  // Basic header. (A wrong secret fails harder than no secret — the dashboard
-  // "client secret" is only wired in if the no-secret exchange demands it.)
+  // 1) code → tokens. Confidential client: HTTP Basic (client_id:secret)
+  // plus secret in the body — Whop demands a secret, and servers ignore extras.
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const tokenRes = await fetch(`${WHOP_OAUTH}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', authorization: `Basic ${basic}` },
     body: JSON.stringify({
       grant_type: 'authorization_code',
       code,
       redirect_uri,
       client_id: clientId,
+      client_secret: clientSecret,
       code_verifier,
     }),
   });
