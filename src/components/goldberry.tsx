@@ -107,32 +107,48 @@ export function SwapBox({ quote, usd, setUsd, onConfirm, busy, live }: { quote: 
 
 // ---------- Wallet (Whop Elements: real mounts when live, placeholders in demo) ----------
 export function WalletPanel({ accountReady, accountId }: { accountReady: boolean; accountId?: string | null }) {
+  const [status, setStatus] = useState<string | null>(null);
+
   useEffect(() => {
     if (!accountReady || !accountId) return;
     let cancelled = false;
+    setStatus('Connecting to Whop…');
     (async () => {
       try {
         const res = await fetch(`/.netlify/functions/token?accountId=${encodeURIComponent(accountId)}`);
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`token endpoint: HTTP ${res.status}`);
         const { token } = (await res.json()) as { token?: string };
-        if (!token || cancelled) return;
+        if (!token) throw new Error('no token issued');
+        if (cancelled) return;
+
+        // loadWhop() resolves to a constructor — it MUST be awaited, then called.
         const { loadWhop } = await import('@whop/elements');
-        const whop = loadWhop() as unknown as {
-          wallet: { create: (opts: { accountId: string; accessToken: string }) => unknown };
-        };
-        const wallet = whop.wallet.create({ accountId, accessToken: token }) as {
-          create: (kind: string, opts?: unknown) => { mount: (sel: string) => void; create: (kind: string, opts?: unknown) => { mount: (sel: string) => void } };
-        };
+        const Whop = await loadWhop();
+        const whop = (Whop as unknown as (opts: { locale: string }) => {
+          wallet: {
+            create: (opts: { accountId: string; accessToken: string }) => {
+              create: (kind: string) => { mount: (sel: string) => void; create: (kind: string) => { mount: (sel: string) => void } };
+            };
+          };
+        })({ locale: 'en' });
+        if (cancelled) return;
+        const wallet = whop.wallet.create({ accountId, accessToken: token });
+
         const balances = wallet.create('balances');
         balances.create('balance').mount('#gb-balance');
         wallet.create('deposit').mount('#gb-deposit');
         wallet.create('withdraw').mount('#gb-withdraw');
-      } catch { /* stays in placeholder mode */ }
+        if (!cancelled) setStatus(null);
+      } catch (e) {
+        if (!cancelled) setStatus(`Could not load Whop rails: ${e instanceof Error ? e.message : String(e)}`);
+      }
     })();
     return () => { cancelled = true; };
   }, [accountReady, accountId]);
+
   return (
     <div>
+      {status && <div className="mock-note" style={{ marginBottom: 10 }}>{status}</div>}
       <div className="wallet-grid">
         <div className="slot" id="gb-balance"><h4>Balance — Whop</h4>{!accountReady && <div className="mock-note">Sign in + open your gold account to see your live ledger here.</div>}</div>
         <div className="slot" id="gb-deposit"><h4>Deposit — Whop</h4>{!accountReady && <div className="mock-note">Your deposit rails (card, bank, crypto) mount here once your account is active.</div>}</div>
