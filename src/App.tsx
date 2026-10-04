@@ -38,18 +38,34 @@ export default function App() {
     }
     g.setBusy(true);
     try {
+      // 0) Balance pre-check — no USDT, no swap. Guide to deposit first.
+      try {
+        const bs = await fetch('/.netlify/functions/vaults-sync');
+        const bj = (await bs.json()) as { usdt?: number };
+        if (bs.ok && typeof bj.usdt === 'number' && bj.usdt < n) {
+          g.notify(`Only $${bj.usdt.toFixed(2)} USDT in your account — deposit first via Add funds.`);
+          setShowWallet(true);
+          scrollToSwap();
+          return;
+        }
+      } catch { /* pre-check is best-effort; execute reports truth */ }
       const r = await fetch('/.netlify/functions/swaps-execute', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ amountUSDT: n, ref: captureRefFromURL() }),
       });
-      const j = await r.json().catch(() => ({}));
+      const j = (await r.json().catch(() => ({}))) as { error?: string; hint?: string; swapId?: string; expectedGrams?: number };
       if (!r.ok) {
-        g.notify(`Swap refused: ${(j as { error?: string }).error || 'unknown'}`);
+        if (j.error === 'token_approval_required') {
+          g.notify('First swap needs a one-time USDT approval in your Whop wallet — approve it there, then Stack again.');
+          setShowWallet(true);
+        } else {
+          g.notify(`Swap refused: ${j.error || 'unknown'}${j.hint ? ` — ${j.hint}` : ''}`);
+        }
         return;
       }
-      g.notify(`Swap sent (${(j as { expectedGrams?: number }).expectedGrams?.toFixed(4)}g expected) — settling…`);
-      const done = await pollSwap((j as { swapId: string }).swapId);
+      g.notify(`Swap sent (${j.expectedGrams?.toFixed(4)}g expected) — settling…`);
+      const done = await pollSwap(j.swapId as string);
       if (done.status === 'complete' && done.grams) {
         g.creditGrams(done.grams);
         g.notify(`Stacked ${done.grams.toFixed(4)}g real gold 🫐`);

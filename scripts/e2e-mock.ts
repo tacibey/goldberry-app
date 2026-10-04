@@ -83,6 +83,11 @@ async function main() {
   assert(r.body.mode === 'whop-quote' && (r.body.grams as number) > 0, 'whop quote', r.body);
 
   // 7) execute → poll to complete
+  // 7a) approval gate: when the router demands it, execute must refuse with 409
+  await fetch(`${BASE}/__control`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalRequired: true }) });
+  r = await call(executeFn, '/swaps-execute', { method: 'POST', body: { amountUSDT: 10 } });
+  assert(r.status === 409 && r.body.error === 'token_approval_required', 'approval gate refuses', r.body);
+  await fetch(`${BASE}/__control`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ approvalRequired: false }) });
   r = await call(executeFn, '/swaps-execute', {
     method: 'POST',
     body: { amountUSDT: 10, ref: { tier1: 'user_ref1', tier2: null } },
@@ -97,9 +102,10 @@ async function main() {
   }
   assert(final.status === 'complete' && (final.grams as number) > 0, 'swap completed with grams', final);
 
-  // 8) vaults-sync → ledger grams
+  // 8) vaults-sync → ledger grams + spendable USDT
   r = await call(syncFn, '/vaults-sync');
   assert((r.body.grams as number) > 0 && r.body.accountId === 'biz_mock1', 'vault sync from ledger', r.body);
+  assert((r.body.usdt as number) > 0, 'USDT balance visible', r.body);
 
   // 9) referral pending recorded
   r = await call(payoutsFn, '/scheduled-payouts?stats=1');

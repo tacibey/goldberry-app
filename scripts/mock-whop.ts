@@ -4,6 +4,7 @@ import http from 'node:http';
 
 const state = {
   verified: false,
+  approvalRequired: false,
   swaps: new Map<string, { polls: number; account_id: string; amount: string }>(),
   swapSeq: 0,
 };
@@ -31,7 +32,8 @@ const server = http.createServer(async (req, res) => {
   // --- test control ---
   if (p === '/__control' && req.method === 'POST') {
     if (typeof body.verified === 'boolean') state.verified = body.verified;
-    return send(res, 200, { ok: true, verified: state.verified });
+    if (typeof body.approvalRequired === 'boolean') state.approvalRequired = body.approvalRequired;
+    return send(res, 200, { ok: true, verified: state.verified, approvalRequired: state.approvalRequired });
   }
 
   // --- OAuth ---
@@ -61,7 +63,7 @@ const server = http.createServer(async (req, res) => {
       id: 'biz_mock1',
       verification_status: state.verified ? 'verified' : 'pending',
       verified: state.verified,
-      balance: { crypto: [{ symbol: 'XAUT', balance: '0.5', value_usd: 2071.38 }] },
+      balance: { crypto: [{ symbol: 'XAUT', balance: '0.5', value_usd: 2071.38 }, { symbol: 'USDT', balance: '42.5', value_usd: 42.5 }] },
     });
   }
   if (p === '/api/v1/account_links' && req.method === 'POST') {
@@ -74,7 +76,7 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, {
       object: 'swap_quote', amount_in: String(amt), amount_out: out,
       rate: '0.0002381', fee_bps: 100, fee_amount: String(amt * 0.01),
-      bridge_fee: 0.015, requires_token_approval: false,
+      bridge_fee: 0.015, requires_token_approval: state.approvalRequired,
     });
   }
   if (p === '/api/v1/swaps' && req.method === 'POST') {

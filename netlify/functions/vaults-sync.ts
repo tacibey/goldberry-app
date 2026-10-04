@@ -21,6 +21,7 @@ export default async (req: Request) => {
   const candidates = [root.balance, root.wallet, root.treasury, root] as Array<Record<string, unknown> | undefined>;
   let xaut = 0;
   let xautUsd = 0;
+  let usdt = 0;
   for (const c of candidates) {
     if (!c) continue;
     const crypto = (c.crypto ?? c.tokens ?? []) as Array<{
@@ -28,10 +29,13 @@ export default async (req: Request) => {
     }>;
     if (Array.isArray(crypto)) {
       for (const t of crypto) {
-        if (String(t.symbol || '').toUpperCase() === 'XAUT') {
+        const sym = String(t.symbol || '').toUpperCase();
+        if (sym === 'XAUT') {
           xaut = parseFloat(String(t.balance ?? 0)) || 0;
           xautUsd = Number(t.value_usd ?? t.valueUsd ?? 0) || 0;
-          break;
+        }
+        if (sym === 'USDT' || sym === 'USD') {
+          usdt = Math.max(usdt, parseFloat(String(t.balance ?? 0)) || 0);
         }
       }
     }
@@ -45,6 +49,7 @@ export default async (req: Request) => {
     grams,
     oz: xaut,
     xautUsd,
+    usdt,
     syncedAt: new Date().toISOString(),
   });
 };
