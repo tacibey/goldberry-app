@@ -22,10 +22,13 @@ export default async (req: Request) => {
   const { code, code_verifier, redirect_uri } = body as Record<string, string>;
   if (!code || !code_verifier || !redirect_uri) return json(400, { error: 'code, code_verifier, redirect_uri required' });
 
-  // 1) code → tokens
+  // 1) code → tokens. Confidential clients authenticate with HTTP Basic
+  // (client_id:client_secret); secret is also sent in the body for providers
+  // that expect it there. Belt and suspenders — servers ignore the extra.
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const tokenRes = await fetch(`${WHOP_OAUTH}/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', authorization: `Basic ${basic}` },
     body: JSON.stringify({
       grant_type: 'authorization_code',
       code,
@@ -35,11 +38,18 @@ export default async (req: Request) => {
       code_verifier,
     }),
   });
-  const tokens = (await tokenRes.json().catch(() => null)) as {
-    access_token?: string; refresh_token?: string; expires_in?: number; error?: string;
-  } | null;
+  const rawTokenText = await tokenRes.text();
+  let tokens: {
+    access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string;
+  } | null = null;
+  try {
+    tokens = JSON.parse(rawTokenText);
+  } catch { /* non-JSON error page */ }
   if (!tokenRes.ok || !tokens?.access_token) {
-    return json(502, { error: 'token exchange failed', detail: JSON.stringify(tokens).slice(0, 200) });
+    return json(502, {
+      error: 'token exchange failed',
+      detail: `http=${tokenRes.status} ${rawTokenText.slice(0, 300)}`,
+    });
   }
 
   // 2) userinfo

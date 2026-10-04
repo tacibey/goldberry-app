@@ -75,8 +75,11 @@ export async function handleCallbackIfPresent(): Promise<{ ok: boolean; error?: 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code, code_verifier: stored.verifier, redirect_uri: cfg.redirectUri }),
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: true, error: (j as { error?: string }).error || 'Exchange failed.' };
+  const j = (await r.json().catch(() => ({}))) as { error?: string; detail?: string; hint?: string };
+  if (!r.ok) {
+    const extra = [j.detail, j.hint].filter(Boolean).join(' ');
+    return { ok: true, error: `${j.error || 'Exchange failed.'}${extra ? ` (${extra})` : ''}` };
+  }
   return { ok: true };
 }
 
