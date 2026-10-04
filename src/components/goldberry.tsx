@@ -117,8 +117,15 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
       try {
         const res = await fetch(`/.netlify/functions/token?accountId=${encodeURIComponent(accountId)}`);
         if (!res.ok) throw new Error(`token endpoint: HTTP ${res.status}`);
-        const { token } = (await res.json()) as { token?: string };
+        const { token, scopes } = (await res.json()) as { token?: string; scopes?: string[] };
         if (!token) throw new Error('no token issued');
+        if (!cancelled) {
+          setStatus(
+            scopes && scopes.length > 0
+              ? `Token scopes: ${scopes.join(', ')}`
+              : 'Token has NO scopes — balance reads will fail. The API key needs read permissions.',
+          );
+        }
         if (cancelled) return;
 
         // loadWhop() resolves to a constructor — it MUST be awaited, then called.
@@ -142,12 +149,19 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
         const openKyc = () => {
           // The deposit element's "Verify identity" button has no default action
           // on an external site — route it to our hosted KYC onboarding link.
+          // Failures are SHOWN (never silent): usually a missing API-key scope.
           void fetch('/.netlify/functions/ensure-account', { method: 'POST' })
             .then((r) => r.json())
-            .then((j: { onboardingUrl?: string }) => {
-              if (j.onboardingUrl) window.open(j.onboardingUrl, '_blank', 'noopener');
+            .then((j: { onboardingUrl?: string; linkError?: string; error?: string }) => {
+              if (j.onboardingUrl) {
+                window.open(j.onboardingUrl, '_blank', 'noopener');
+              } else {
+                setStatus(`KYC link failed: ${j.linkError || j.error || 'unknown error'}`);
+              }
             })
-            .catch(() => {});
+            .catch(() => {
+              setStatus('KYC link failed: network error.');
+            });
         };
 
         const balances = wallet.create('balances');
@@ -156,7 +170,7 @@ export function WalletPanel({ accountReady, accountId }: { accountReady: boolean
         // not fire for the deposit button).
         wallet.create('deposit', { onIdentityVerificationRequested: openKyc }).mount('#gb-deposit');
         wallet.create('withdraw').mount('#gb-withdraw');
-        if (!cancelled) setStatus(null);
+        // Keep the scopes line visible — it is the live diagnosis readout.
       } catch (e) {
         if (!cancelled) setStatus(`Could not load Whop rails: ${e instanceof Error ? e.message : String(e)}`);
       }

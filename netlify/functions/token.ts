@@ -47,8 +47,18 @@ export default async (req: Request) => {
         body: JSON.stringify({ company_id: accountId, ...(scoped_actions.length ? { scoped_actions } : {}) }),
       });
       const j = await r.json().catch(() => null);
-      if (r.ok && (j as { token?: string })?.token) {
-        return json(200, { token: (j as { token: string }).token, accountId, mine: Boolean(found?.session.account_id) });
+      const tok = (j as { token?: string })?.token;
+      if (r.ok && tok) {
+        // Echo the granted actions (decoded from the JWT payload — no secret
+        // involved) so the UI can show exactly what this token may do.
+        let granted: string[] = [];
+        try {
+          const payload = tok.split('.')[1] || '';
+          const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+          const decoded = JSON.parse(Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()) as { actions?: string[] };
+          if (Array.isArray(decoded.actions)) granted = decoded.actions;
+        } catch { /* non-JWT (mock) — leave empty */ }
+        return json(200, { token: tok, accountId, mine: Boolean(found?.session.account_id), scopes: granted });
       }
       lastDetail = JSON.stringify(j).slice(0, 200);
       // Only retry on scope errors; other failures are final.
